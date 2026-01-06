@@ -1,0 +1,30 @@
+{
+  "name": "german-verbs-db",
+  "version": "1.0.0",
+  "description": "German verb conjugation database populated from Wiktionary",
+  "main": "src/index.js",
+  "type": "module",
+  "files": [
+    "schema.sql",
+    "german-verbs.db"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "scrape": "node src/index.js scrape",
+    "scrape:resume": "node src/index.js scrape --resume",
+    "scrape:incomplete": "node src/index.js scrape --incomplete",
+    "update-frequencies": "node src/index.js frequency",
+    "init-db": "node src/db.js",
+    "cleanup": "node src/cleanup.js"
+  },
+  "keywords": [
+    "german",
+    "verbs",
+    "conjugation",
+    "wiktionary"
+  ],
+  "license": "CC-BY-SA-4.0",
+  "dependencies": {
+    "better-sqlite3": "^11.7.0"
+  }
+}
