@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { initDatabase, insertVerb, markSourceRetrieved } from "../src/db.js";
+import {
+  initDatabase,
+  insertConjugation,
+  insertVerb,
+  markSourceRetrieved,
+} from "../src/db.js";
 
 function withTempDb(fn) {
   const dir = mkdtempSync(join(tmpdir(), "german-verbs-test-"));
@@ -36,6 +41,62 @@ test("insertVerb stores where the forms came from", () => {
       source_retrieved_at: "2026-10-31T12:00:00.000Z",
     });
     db.close();
+  });
+});
+
+test("re-inserting a verb updates it without losing its related data", () => {
+  withTempDb((path) => {
+    const db = initDatabase(path);
+    const id = insertVerb(db, { infinitive: "gehen", sourceRevisionId: 1 });
+    insertVerb(db, { infinitive: "stehen" });
+    db.prepare(
+      "UPDATE verbs SET usage_popularity = 7, created_at = 'then' WHERE id = ?"
+    ).run(id);
+    db.prepare(
+      "INSERT INTO verb_translations (verb_id, locale, text) VALUES (?, 'en', 'to go')"
+    ).run(id);
+    insertConjugation(db, {
+      verbId: id,
+      tense: "praesens",
+      sg1: "gehe",
+      sg2: "gehst",
+      sg3: "geht",
+      pl1: "gehen",
+      pl2: "geht",
+      pl3: "gehen",
+    });
+
+    const sameId = insertVerb(db, { infinitive: "gehen", sourceRevisionId: 2 });
+
+    assert.equal(sameId, id);
+    const row = db.prepare("SELECT * FROM verbs WHERE id = ?").get(id);
+    assert.equal(row.source_revision_id, 2);
+    assert.equal(row.usage_popularity, 7);
+    assert.equal(row.created_at, "then");
+    assert.notEqual(row.updated_at, "then");
+    const count = (table) =>
+      db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE verb_id = ?`).get(id).n;
+    assert.equal(count("verb_translations"), 1);
+    assert.equal(count("verb_conjugations"), 1);
+    db.close();
+  });
+});
+
+test("opening a database turns empty separable prefixes into NULL", () => {
+  withTempDb((path) => {
+    const db = initDatabase(path);
+    insertVerb(db, { infinitive: "gehen", separablePrefix: "" });
+    insertVerb(db, { infinitive: "ansehen", separablePrefix: "an" });
+    db.close();
+
+    const reopened = initDatabase(path);
+    const prefix = (infinitive) =>
+      reopened
+        .prepare("SELECT separable_prefix AS p FROM verbs WHERE infinitive = ?")
+        .get(infinitive).p;
+    assert.equal(prefix("gehen"), null);
+    assert.equal(prefix("ansehen"), "an");
+    reopened.close();
   });
 });
 

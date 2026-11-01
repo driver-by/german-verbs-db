@@ -9,12 +9,7 @@
  *   npm run cleanup
  */
 
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
-import { initDatabase, getIncompleteVerbs } from "./db.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "..", "german-verbs.db");
+import { DEFAULT_DB_PATH, initDatabase, getIncompleteVerbs } from "./db.js";
 
 /**
  * Delete verbs that don't have all 3 required tenses
@@ -47,8 +42,8 @@ function main() {
   console.log("German Verbs Database Cleanup\n");
 
   console.log("Connecting to database...");
-  const db = initDatabase(DB_PATH);
-  console.log(`Database: ${DB_PATH}\n`);
+  const db = initDatabase(DEFAULT_DB_PATH);
+  console.log(`Database: ${DEFAULT_DB_PATH}\n`);
 
   try {
     console.log("Finding and deleting incomplete verbs...\n");

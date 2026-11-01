@@ -83,11 +83,22 @@ export function createApiClient({
       "User-Agent": `german-verbs-db-bot/${CLIENT_VERSION} (${contact}) node/${process.versions.node}`,
     };
 
+    let failure = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       await waitForRateLimit();
 
       const startTime = now();
-      const response = await fetchFn(url.toString(), { headers });
+      let response = null;
+      let data = null;
+      let networkError = null;
+      try {
+        response = await fetchFn(url.toString(), { headers });
+        if (response.ok) {
+          data = await response.json();
+        }
+      } catch (error) {
+        networkError = error;
+      }
       const endTime = now();
       nextRequestTime =
         endTime +
@@ -95,32 +106,48 @@ export function createApiClient({
           ? SLOW_RESPONSE_DELAY_MS
           : RATE_LIMIT_MS);
 
-      let data = null;
-      if (response.ok) {
-        data = await response.json();
-      } else if (response.status !== 429 && response.status !== 503) {
-        throw new Error(
-          `HTTP error: ${response.status} ${response.statusText}`
-        );
+      const httpError =
+        response && !response.ok
+          ? new Error(`HTTP error: ${response.status} ${response.statusText}`)
+          : null;
+      if (httpError && response.status < 500 && response.status !== 429) {
+        throw httpError;
       }
 
+      const errorCode = data?.error?.code;
       const throttledByApi =
-        data?.error?.code === "maxlag" || data?.error?.code === "ratelimited";
+        errorCode === "maxlag" || errorCode === "ratelimited";
       if (data && !throttledByApi) {
+        // A missing page is an answer; any other API error says nothing about the page
+        if (errorCode && errorCode !== "missingtitle") {
+          throw new Error(`API error: ${errorCode}`);
+        }
         return data;
       }
 
+      if (networkError) {
+        failure = new Error(`Network error: ${networkError.message}`);
+      } else if (
+        httpError &&
+        response.status !== 429 &&
+        response.status !== 503
+      ) {
+        failure = httpError;
+      } else {
+        failure = new Error(
+          "RATE_LIMIT: Too many requests. Please wait and try again."
+        );
+      }
+
       const retryAfter = parseRetryAfter(
-        response.headers.get("Retry-After"),
+        response?.headers.get("Retry-After"),
         endTime
       );
       nextRequestTime =
         endTime + (retryAfter ?? BASE_BACKOFF_MS * 2 ** attempt);
     }
 
-    throw new Error(
-      "RATE_LIMIT: Too many requests. Please wait and try again."
-    );
+    throw failure;
   }
 
   /**
@@ -128,7 +155,7 @@ export function createApiClient({
    * @param {Object} params - API parameters
    * @param {string} [lang='de'] - Language wiki to use (e.g. 'de', 'en')
    * @returns {Promise<Object>} - API response
-   * @throws {Error} - When still throttled after retrying, or on other errors
+   * @throws {Error} - When still failing after retrying, or on an API error other than a missing page
    */
   function request(params, lang = "de") {
     const result = queue.then(() => send(params, lang));
@@ -148,7 +175,11 @@ export function createApiClient({
       { action: "parse", page: pageTitle, prop: `${prop}|revid` },
       lang
     );
-    const content = data.parse?.[prop]?.["*"];
+    if (data.error?.code === "missingtitle") return null;
+    if (!data.parse) {
+      throw new Error(`Unexpected API response for ${pageTitle}`);
+    }
+    const content = data.parse[prop]?.["*"];
     return content ? { content, revisionId: data.parse.revid } : null;
   }
 

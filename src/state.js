@@ -16,6 +16,9 @@ const STATE_FILE = join(__dirname, "..", ".scraper-state.json");
  * @property {string|null} verbListContinueToken - Continue token for category pagination
  * @property {string[]} verbList - List of all fetched verbs
  * @property {number} processedVerbIndex - Index of last processed verb for conjugations
+ * @property {{parsed: number, attempted: number, startIndex: number}|null} [parserCheck] - Pages since the last parsed one
+ * @property {number} [storedVerbs] - Verbs stored so far, across resumes
+ * @property {boolean} [incompleteMode] - Whether this run re-scrapes incomplete verbs only
  * @property {string} lastUpdated - ISO timestamp of last update
  */
 
@@ -23,12 +26,15 @@ const STATE_FILE = join(__dirname, "..", ".scraper-state.json");
  * Get default initial state
  * @returns {ScraperState}
  */
-function getDefaultState() {
+export function getDefaultState() {
   return {
     phase: "fetching_verbs",
     verbListContinueToken: null,
     verbList: [],
     processedVerbIndex: -1,
+    parserCheck: null,
+    storedVerbs: 0,
+    incompleteMode: false,
     lastUpdated: new Date().toISOString(),
   };
 }

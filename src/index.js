@@ -6,6 +6,8 @@
  *
  * Commands:
  *   scrape        Run the scraper (supports --resume, --incomplete)
+ *   frequency     Update usage_popularity from the frequency lists
+ *   init-db       Create the database or migrate an existing one
  */
 
 // Minimal dispatcher that dynamically imports subcommands
@@ -18,6 +20,12 @@ async function main() {
     console.log("Available commands:");
     console.log(
       "  scrape        Run scraper (supports --resume, --incomplete)"
+    );
+    console.log(
+      "  frequency     Update usage_popularity from the frequency lists"
+    );
+    console.log(
+      "  init-db       Create the database or migrate an existing one"
     );
     process.exit(0);
   }
@@ -36,6 +44,13 @@ async function main() {
   if (cmd === "frequency") {
     const mod = await import("./frequency.js");
     await mod.main();
+    return;
+  }
+
+  if (cmd === "init-db") {
+    const { DEFAULT_DB_PATH, initDatabase } = await import("./db.js");
+    initDatabase(DEFAULT_DB_PATH).close();
+    console.log(`Database ready at ${DEFAULT_DB_PATH}`);
     return;
   }
 

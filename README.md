@@ -58,7 +58,7 @@ The API client follows the [Robot policy](https://wikitech.wikimedia.org/wiki/Ro
 - one request at a time, at least 350 ms apart, and 5 seconds apart after a response slower than 1 second
 - a descriptive `User-Agent` with contact details
 - `maxlag` on every request
-- `Retry-After` honoured, with exponential backoff from 5 seconds when it is absent
+- `Retry-After` honoured, with exponential backoff from 5 seconds when it is absent; network failures and 5xx responses back off the same way
 
 If you run the scraper yourself, set `WIKIMEDIA_CONTACT` to your own URL or email address so Wikimedia can reach you instead of this project.
 
@@ -85,11 +85,23 @@ npm install
 npm test
 ```
 
+### Create or migrate the database
+
+Creates `german-verbs.db` if needed and applies the schema and source records. Scraping does this too.
+
+```bash
+npm run init-db
+```
+
 ### Scrape conjugations into `german-verbs.db`
 
 ```bash
 npm run scrape
 ```
+
+Re-scraping a verb updates its forms and source details. It keeps the verb's `id`, translations, `usage_popularity` and `created_at`.
+
+A run stops if requests keep failing after retries, and `npm run scrape:resume` continues from the verb that failed.
 
 ### Resume scraping after an interruption / rate limit
 
@@ -107,7 +119,7 @@ npm run scrape:incomplete
 
 ### Update usage frequencies
 
-A full scrape resets `usage_popularity`, so run this afterwards.
+New verbs start with a `usage_popularity` of 0, so run this after a scrape.
 
 Fetches the frequency list(s) above and updates `verbs.usage_popularity` for matches:
 

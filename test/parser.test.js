@@ -133,7 +133,7 @@ test("parseConjugations: wiederauferstehen", () => {
 test("parseConjugations: nennen", () => {
   const result = parseConjugations(mockText3);
   assert.deepStrictEqual(result, {
-    separablePrefix: "",
+    separablePrefix: null,
     infinitive: "nennen",
     praesens: {
       sg1: "nenne",
@@ -189,7 +189,7 @@ test("parseConjugations: nennen", () => {
 test("parseConjugations: tun", () => {
   const result = parseConjugations(mockText4);
   assert.deepStrictEqual(result, {
-    separablePrefix: "",
+    separablePrefix: null,
     infinitive: "tun",
     praesens: {
       sg1: "tue, tu",
@@ -245,7 +245,7 @@ test("parseConjugations: tun", () => {
 test("parseConjugations: betrinken", () => {
   const result = parseConjugations(mockText5);
   assert.deepStrictEqual(result, {
-    separablePrefix: "",
+    separablePrefix: null,
     infinitive: "betrinken",
     praesens: {
       sg1: "betrinke",

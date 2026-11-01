@@ -5,6 +5,8 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+export const DEFAULT_DB_PATH = join(__dirname, "..", "german-verbs.db");
+
 const PROVENANCE_COLUMNS = [
   "source_url TEXT",
   "source_revision_id INTEGER",
@@ -54,6 +56,7 @@ export function initDatabase(dbPath) {
 
   addMissingProvenanceColumns(db);
   db.exec(schema);
+  clearEmptySeparablePrefixes(db);
   seedSources(db);
 
   return db;
@@ -72,6 +75,33 @@ function addMissingProvenanceColumns(db) {
       db.exec(`ALTER TABLE verbs ADD COLUMN ${column}`);
     }
   }
+}
+
+/**
+ * Older scrapes stored '' for verbs that are not separable; the schema says NULL
+ * @param {Database} db - Database instance
+ */
+function clearEmptySeparablePrefixes(db) {
+  db.exec("UPDATE verbs SET separable_prefix = NULL WHERE separable_prefix = ''");
+}
+
+const preparedStatements = new WeakMap();
+
+/**
+ * Compile a statement once per database connection
+ * @param {Database} db - Database instance
+ * @param {string} sql - SQL text
+ */
+function prepared(db, sql) {
+  let statements = preparedStatements.get(db);
+  if (!statements) {
+    statements = new Map();
+    preparedStatements.set(db, statements);
+  }
+  if (!statements.has(sql)) {
+    statements.set(sql, db.prepare(sql));
+  }
+  return statements.get(sql);
 }
 
 /**
@@ -111,10 +141,12 @@ export function markSourceRetrieved(db, key, retrievedAt) {
 }
 
 /**
- * Insert a verb into the database
+ * Insert a verb, or update the scraped fields of one that already exists.
+ * An existing verb keeps its id, translations, conjugations, usage_popularity
+ * and created_at; usagePopularity only applies to a new verb.
  * @param {Database} db - Database instance
  * @param {Object} verb - Verb data
- * @returns {number} - The inserted verb ID
+ * @returns {number} - The verb ID
  */
 export function insertVerb(
   db,
@@ -128,15 +160,26 @@ export function insertVerb(
     sourceRetrievedAt = null,
   }
 ) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO verbs (
+  const stmt = prepared(
+    db,
+    `
+    INSERT INTO verbs (
       infinitive, separable_prefix, is_irregular, usage_popularity,
       source_url, source_revision_id, source_retrieved_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+    ON CONFLICT (infinitive) DO UPDATE SET
+      separable_prefix = excluded.separable_prefix,
+      is_irregular = excluded.is_irregular,
+      source_url = excluded.source_url,
+      source_revision_id = excluded.source_revision_id,
+      source_retrieved_at = excluded.source_retrieved_at,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    RETURNING id
+  `
+  );
 
-  const result = stmt.run(
+  return stmt.get(
     infinitive,
     separablePrefix,
     isIrregular ? 1 : 0,
@@ -144,17 +187,7 @@ export function insertVerb(
     sourceUrl,
     sourceRevisionId,
     sourceRetrievedAt
-  );
-
-  // If the verb already exists, get its ID
-  if (result.changes === 0) {
-    const existing = db
-      .prepare("SELECT id FROM verbs WHERE infinitive = ?")
-      .get(infinitive);
-    return existing.id;
-  }
-
-  return result.lastInsertRowid;
+  ).id;
 }
 
 /**
@@ -166,10 +199,13 @@ export function insertConjugation(
   db,
   { verbId, tense, sg1, sg2, sg3, pl1, pl2, pl3, notes = null }
 ) {
-  const stmt = db.prepare(`
+  const stmt = prepared(
+    db,
+    `
     INSERT OR REPLACE INTO verb_conjugations (verb_id, tense, sg1, sg2, sg3, pl1, pl2, pl3, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  `
+  );
 
   stmt.run(verbId, tense, sg1, sg2, sg3, pl1, pl2, pl3, notes);
 }
@@ -181,9 +217,10 @@ export function insertConjugation(
  * @returns {number|null} - Verb ID or null if not found
  */
 export function getVerbIdByInfinitive(db, infinitive) {
-  const result = db
-    .prepare("SELECT id FROM verbs WHERE infinitive = ?")
-    .get(infinitive);
+  const result = prepared(
+    db,
+    "SELECT id FROM verbs WHERE infinitive = ?"
+  ).get(infinitive);
   return result ? result.id : null;
 }
 

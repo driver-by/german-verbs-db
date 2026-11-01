@@ -1,10 +1,5 @@
 import { getGermanWordsFrequences } from "./api.js";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
-import { initDatabase, markSourceRetrieved } from "./db.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "..", "german-verbs.db");
+import { DEFAULT_DB_PATH, initDatabase, markSourceRetrieved } from "./db.js";
 
 /**
  * Fetch German word frequencies and update local DB's usage_popularity
@@ -14,7 +9,13 @@ export async function main() {
   const freqMap = await getGermanWordsFrequences();
   console.log(`Fetched ${freqMap.size} entries.`);
 
-  const db = initDatabase(DB_PATH);
+  if (freqMap.size === 0) {
+    console.error("No frequency data retrieved; database left unchanged.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const db = initDatabase(DEFAULT_DB_PATH);
   try {
     const verbs = db.prepare("SELECT id, infinitive FROM verbs").all();
     console.log(`Database has ${verbs.length} verbs; checking for matches...`);

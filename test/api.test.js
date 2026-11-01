@@ -81,8 +81,8 @@ test("never runs two requests at the same time", async () => {
 });
 
 test("a failed request does not block later requests", async () => {
-  const { client } = setup([{ status: 500 }, { body: { value: 2 } }]);
-  await assert.rejects(client.request({ action: "query" }), /HTTP error: 500/);
+  const { client } = setup([{ status: 404 }, { body: { value: 2 } }]);
+  await assert.rejects(client.request({ action: "query" }), /HTTP error: 404/);
   assert.deepEqual(await client.request({ action: "query" }), { value: 2 });
 });
 
@@ -156,6 +156,81 @@ test("getParsedPage returns null for a missing page", async () => {
   const { client } = setup([{ body: { error: { code: "missingtitle" } } }]);
   assert.equal(await client.getParsedPage("Flexion:nope"), null);
 });
+
+test("retries a network failure with backoff", async () => {
+  const clock = { time: 0, sleeps: [] };
+  let calls = 0;
+  const client = createApiClient({
+    contact: "https://example.org/contact",
+    now: () => clock.time,
+    sleep: async (ms) => {
+      clock.sleeps.push(ms);
+      clock.time += ms;
+    },
+    fetchFn: async () => {
+      if (++calls === 1) throw new Error("fetch failed");
+      return Response.json({ value: 1 });
+    },
+  });
+  assert.deepEqual(await client.request({ action: "query" }), { value: 1 });
+  assert.deepEqual(clock.sleeps, [5000]);
+});
+
+test("gives up with a network error once retries run out", async () => {
+  let calls = 0;
+  const client = createApiClient({
+    contact: "https://example.org/contact",
+    sleep: async () => {},
+    fetchFn: async () => {
+      calls++;
+      throw new Error("fetch failed");
+    },
+  });
+  await assert.rejects(
+    client.request({ action: "query" }),
+    /Network error: fetch failed/
+  );
+  assert.equal(calls, 6);
+});
+
+test("retries a malformed response body", async () => {
+  let count = 0;
+  const retrying = createApiClient({
+    contact: "https://example.org/contact",
+    sleep: async () => {},
+    fetchFn: async () =>
+      ++count === 1
+        ? new Response("<html>", { status: 200 })
+        : Response.json({ value: 1 }),
+  });
+  assert.deepEqual(await retrying.request({ action: "query" }), { value: 1 });
+});
+
+for (const status of [500, 502, 504]) {
+  test(`retries HTTP ${status}, then reports it`, async () => {
+    const recovering = setup([{ status }, { body: { value: 1 } }]);
+    assert.deepEqual(await recovering.client.request({ action: "query" }), {
+      value: 1,
+    });
+
+    const failing = setup(Array(20).fill({ status }));
+    await assert.rejects(
+      failing.client.request({ action: "query" }),
+      new RegExp(`HTTP error: ${status}`)
+    );
+    assert.equal(failing.calls.length, 6);
+  });
+}
+
+for (const code of ["readonly", "internal_api_error_DBQueryError"]) {
+  test(`getParsedPage throws on the API error ${code}`, async () => {
+    const { client } = setup([{ body: { error: { code } } }]);
+    await assert.rejects(
+      client.getParsedPage("Flexion:gehen"),
+      new RegExp(`API error: ${code}`)
+    );
+  });
+}
 
 test("flexionPageUrl encodes umlauts", () => {
   assert.equal(

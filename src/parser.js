@@ -82,7 +82,7 @@ export function parseConjugations(text) {
   if (!text) return null;
 
   const result = {
-    separablePrefix: "",
+    separablePrefix: null,
     infinitive: "",
     praesens: {},
     praeteritum: {},
@@ -124,7 +124,7 @@ export function parseConjugations(text) {
         result.separablePrefix = parts
           .slice(1)
           .filter((p) => !reflexive.test(p))
-          .join(" ");
+          .join(" ") || null;
       }
     }
   }
